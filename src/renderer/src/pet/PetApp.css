@@ -1,0 +1,164 @@
+/* ------------------------------------------------------------------ */
+/* PetApp – Desktop pet styling & animation keyframes                */
+/* ------------------------------------------------------------------ */
+
+/* ---- Container -------------------------------------------------- */
+
+.pet-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* ---- Pet character ------------------------------------------------ */
+
+.pet-character {
+  font-size: 64px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: transform 0.3s ease;
+  position: relative;
+}
+
+/* ---- Speech bubble ----------------------------------------------- */
+
+.speech-bubble {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: fadeIn 0.3s ease;
+  -webkit-app-region: no-drag;
+  z-index: 10;
+}
+
+/* ---- Keyframes --------------------------------------------------- */
+
+/* Gentle breathing (idle) */
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Looking up at mouse (hover) */
+@keyframes lookUp {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15) rotate(-8deg);
+  }
+  100% {
+    transform: scale(1.1) rotate(-5deg);
+  }
+}
+
+/* Thinking sway */
+@keyframes think {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+}
+
+/* Bounce (done responding) */
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-20px) scale(1.15);
+  }
+  50% {
+    transform: translateY(0) scale(0.95);
+  }
+  70% {
+    transform: translateY(-8px) scale(1.05);
+  }
+}
+
+/* Snooze (sleep) */
+@keyframes snooze {
+  0%,
+  100% {
+    transform: scale(0.85) rotate(10deg);
+  }
+  50% {
+    transform: scale(0.8) rotate(8deg);
+  }
+}
+
+/* Walk – gentle side-to-side sway */
+@keyframes walk {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+/* Fade in (speech bubble) */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ---- Animation class assignments --------------------------------- */
+
+.pet-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.pet-look-up {
+  animation: lookUp 0.4s ease-out forwards;
+}
+
+.pet-think {
+  animation: think 0.8s ease-in-out infinite;
+}
+
+.pet-bounce {
+  animation: bounce 0.6s ease;
+}
+
+.pet-snooze {
+  animation: snooze 3s ease-in-out infinite;
+}
+
+.pet-walk {
+  animation: walk 1.5s ease-in-out infinite;
+}
