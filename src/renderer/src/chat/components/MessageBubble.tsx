@@ -2,14 +2,10 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { ChatMessage } from '../../types/chat';
 
 interface Props {
-  message: {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: number;
-  };
+  message: ChatMessage;
 }
 
 export default function MessageBubble({ message }: Props) {
