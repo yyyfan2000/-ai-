@@ -1,73 +1,78 @@
 /**
  * 联网搜索服务
- * 使用 DuckDuckGo Instant Answer API（免费，无需 API Key）
+ * 优先使用 DuckDuckGo，失败时返回空（静默降级）
  */
-
-interface SearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-}
 
 export async function searchWeb(query: string): Promise<string> {
   try {
-    // 使用 DuckDuckGo Instant Answer API
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'XiaoLing-Desktop-Pet/1.0' },
+    // 方案1: DuckDuckGo HTML 搜索（更可靠）
+    const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=cn-zh`;
+    const htmlRes = await fetch(htmlUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+      signal: AbortSignal.timeout(8000),
     });
 
-    if (!response.ok) {
-      return '';
-    }
-
-    const data = await response.json() as any;
-    const parts: string[] = [];
-
-    // 摘要答案
-    if (data.AbstractText) {
-      parts.push(`📖 ${data.AbstractText}\n来源: ${data.AbstractURL}`);
-    }
-
-    // 相关信息
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      const topics = data.RelatedTopics.filter((t: any) => t.Text).slice(0, 5);
-      if (topics.length > 0) {
-        parts.push(`\n🔗 相关信息:`);
-        topics.forEach((t: any) => {
-          const snippet = t.Text.length > 200 ? t.Text.slice(0, 200) + '...' : t.Text;
-          parts.push(`- ${snippet}`);
-        });
-      }
-    }
-
-    if (parts.length === 0) {
-      // 如果 DuckDuckGo 没结果，尝试用 HTML 搜索抓取
-      const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      const htmlRes = await fetch(htmlUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      });
+    if (htmlRes.ok) {
       const html = await htmlRes.text();
 
-      // 简易抓取结果
-      const resultRegex = /<a[^>]*class="result__a"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*?>([^<]*)<\/a>/gi;
-      const matches = Array.from(html.matchAll(resultRegex)).slice(0, 5);
+      // 提取搜索结果
+      const resultRegex = /<a[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*?>([\s\S]*?)<\/a>/gi;
+      const results: string[] = [];
+      let match;
 
-      if (matches.length > 0) {
-        parts.push(`🔗 "${query}" 的搜索结果:`);
-        matches.forEach((m) => {
-          const title = m[1]?.replace(/<[^>]+>/g, '').trim() || '';
-          const snippet = m[2]?.replace(/<[^>]+>/g, '').trim() || '';
-          if (title || snippet) {
-            parts.push(`- ${title}: ${snippet.slice(0, 150)}`);
-          }
-        });
+      while ((match = resultRegex.exec(html)) !== null && results.length < 5) {
+        const title = match[1]?.replace(/<[^>]+>/g, '').trim() || '';
+        const snippet = match[2]?.replace(/<[^>]+>/g, '').trim() || '';
+        if (title || snippet) {
+          results.push(`- [${title}] ${snippet.slice(0, 200)}`);
+        }
+      }
+
+      if (results.length > 0) {
+        return `以下是与"${query}"相关的网络搜索结果：\n\n${results.join('\n')}`;
       }
     }
-
-    return parts.join('\n');
   } catch {
-    return ''; // 搜索失败时静默处理，让 AI 正常回复
+    // DuckDuckGo 不可用，尝试备用方案
   }
+
+  // 方案2: DuckDuckGo Lite
+  try {
+    const liteUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+    const liteRes = await fetch(liteUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (liteRes.ok) {
+      const html = await liteRes.text();
+      // Lite 版本结果格式
+      const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<span[^>]*class="link-text"[^>]*>([\s\S]*?)<\/span>/gi;
+      const results: string[] = [];
+      let match;
+
+      while ((match = linkRegex.exec(html)) !== null && results.length < 5) {
+        const title = match[2]?.replace(/<[^>]+>/g, '').trim() || '';
+        const snippet = match[3]?.replace(/<[^>]+>/g, '').trim() || '';
+        if (title) {
+          results.push(`- ${title}${snippet ? ': ' + snippet.slice(0, 150) : ''}`);
+        }
+      }
+
+      if (results.length > 0) {
+        return `以下是与"${query}"相关的网络搜索结果：\n\n${results.join('\n')}`;
+      }
+    }
+  } catch {
+    // 静默失败
+  }
+
+  return ''; // 搜索失败，让 AI 基于自身知识回答
 }

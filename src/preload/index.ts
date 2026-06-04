@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openChatWindow: () => ipcRenderer.send('window:open-chat'),
   openSettingsWindow: () => ipcRenderer.send('window:open-settings'),
   showPetContextMenu: () => ipcRenderer.send('pet:context-menu'),
+  movePetWindow: (dx: number, dy: number) => ipcRenderer.send('window:move-pet', { dx, dy }),
 
   // 宠物状态
   setPetState: (state: string) => ipcRenderer.send('pet:set-state', state),

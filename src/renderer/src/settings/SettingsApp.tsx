@@ -96,15 +96,8 @@ export default function SettingsApp() {
   return (
     <div className="settings-window">
       {/* Title Bar */}
-      <header className="settings-titlebar flex items-center justify-between pl-[76px] pr-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 select-none">
+      <header className="settings-titlebar flex items-center pl-[76px] pr-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 select-none">
         <h2 className="text-sm font-semibold text-gray-800">⚙️ 设置</h2>
-        <button
-          onClick={handleClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          title="关闭"
-        >
-          ✕
-        </button>
       </header>
 
       {/* Scrollable Content */}

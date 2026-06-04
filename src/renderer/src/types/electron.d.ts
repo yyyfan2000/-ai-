@@ -12,6 +12,7 @@ interface ElectronAPI {
   openChatWindow: () => void;
   openSettingsWindow: () => void;
   showPetContextMenu: () => void;
+  movePetWindow: (dx: number, dy: number) => void;
 
   setPetState: (state: string) => void;
   onPetStateChange: (callback: (state: string) => void) => () => void;

@@ -60,20 +60,34 @@ export function useStreamChat() {
       let messageContent: any = content.trim();
 
       if (files && files.length > 0) {
-        const parts: any[] = [{ type: 'text', text: content.trim() }];
+        const parts: any[] = [];
 
-        files.forEach((f) => {
-          if (f.type === 'image') {
-            parts.push({
-              type: 'image_url',
-              image_url: { url: f.dataUrl },
-            });
-          } else {
-            parts.push({
-              type: 'file',
-              file: { filename: f.name, data: f.dataUrl },
-            });
-          }
+        // 先添加文本内容（包括文件文本内容）
+        let textBody = content.trim();
+        const textFiles = files.filter(f => f.textContent);
+        if (textFiles.length > 0) {
+          textBody += '\n\n--- 附件文件内容 ---\n';
+          textFiles.forEach(f => {
+            textBody += `\n[文件: ${f.name}]\n\`\`\`\n${f.textContent}\n\`\`\`\n`;
+          });
+        }
+
+        // 非文本文件的提示
+        const binaryFiles = files.filter(f => !f.textContent && f.type === 'file');
+        if (binaryFiles.length > 0) {
+          textBody += '\n\n[用户上传了以下文件: ' + binaryFiles.map(f => f.name).join(', ') + ']';
+        }
+
+        parts.push({ type: 'text', text: textBody });
+
+        // 添加图片
+        files.filter(f => f.type === 'image').forEach(f => {
+          parts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
+        });
+
+        // 添加二进制文件为 file 类型
+        binaryFiles.forEach(f => {
+          parts.push({ type: 'file', file: { filename: f.name, data: f.dataUrl } });
         });
 
         messageContent = parts;

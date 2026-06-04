@@ -42,6 +42,15 @@ export function registerAllIpc(): void {
     menu.popup();
   });
 
+  // 宠物窗口拖拽
+  ipcMain.on('window:move-pet', (_event, { dx, dy }: { dx: number; dy: number }) => {
+    const petWin = getPetWindow();
+    if (petWin) {
+      const [x, y] = petWin.getPosition();
+      petWin.setPosition(x + dx, y + dy);
+    }
+  });
+
   // 宠物状态同步（Renderer → Main → PetWindow Renderer）
   ipcMain.on('pet:set-state', (_event, state: string) => {
     const petWin = getPetWindow();

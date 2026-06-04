@@ -10,8 +10,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  -webkit-app-region: drag;
+  cursor: grab;
   user-select: none;
+}
+
+.pet-container:active {
+  cursor: grabbing;
 }
 
 /* ---- Pet character ------------------------------------------------ */
@@ -20,7 +24,7 @@
   font-size: 64px;
   line-height: 1;
   cursor: pointer;
-  -webkit-app-region: no-drag;
+  /* no-drag removed - use manual drag via IPC */
   transition: transform 0.3s ease;
   position: relative;
 }
@@ -39,7 +43,7 @@
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   animation: fadeIn 0.3s ease;
-  -webkit-app-region: no-drag;
+  /* no-drag removed - use manual drag via IPC */
   z-index: 10;
 }
 
