@@ -12,7 +12,7 @@ function generateId(): string {
   return 'model_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
 }
 
-const defaultCaps: ModelCapabilities = { text: true, image: false, file: false };
+const defaultCaps: ModelCapabilities = { text: true, image: false, file: false, search: false };
 
 export default function ModelForm({ onSave, onCancel }: Props) {
   const [provider, setProvider] = useState('');
@@ -193,6 +193,15 @@ export default function ModelForm({ onSave, onCancel }: Props) {
               className="accent-fox-orange"
             />
             <span>📎 文件</span>
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={capabilities.search}
+              onChange={() => handleCapToggle('search')}
+              className="accent-fox-orange"
+            />
+            <span>🌐 联网搜索</span>
           </label>
         </div>
       </div>

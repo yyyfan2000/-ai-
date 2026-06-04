@@ -167,6 +167,7 @@ export default function ChatApp() {
         disabled={status !== 'idle'}
         supportsImage={currentModel?.capabilities?.image ?? false}
         supportsFile={currentModel?.capabilities?.file ?? false}
+        supportsSearch={currentModel?.capabilities?.search ?? false}
         searchEnabled={searchEnabled}
         onSearchToggle={setSearchEnabled}
       />

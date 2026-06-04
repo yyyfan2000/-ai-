@@ -2,6 +2,7 @@ export interface ModelCapabilities {
   text: boolean;
   image: boolean;
   file: boolean;
+  search: boolean;
 }
 
 export interface ModelConfig {

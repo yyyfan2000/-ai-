@@ -5,7 +5,7 @@ interface ModelConfig {
   displayName: string;
   apiKey: string;
   baseUrl: string;
-  capabilities: { text: boolean; image: boolean; file: boolean };
+  capabilities: { text: boolean; image: boolean; file: boolean; search: boolean };
 }
 
 interface ElectronAPI {

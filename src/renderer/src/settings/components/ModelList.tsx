@@ -11,6 +11,7 @@ function CapabilityIcons({ model }: { model: ModelConfig }) {
   if (model.capabilities.text) icons.push('📝');
   if (model.capabilities.image) icons.push('🖼️');
   if (model.capabilities.file) icons.push('📎');
+  if (model.capabilities.search) icons.push('🌐');
   return <span className="text-xs">{icons.join(' ')}</span>;
 }
 

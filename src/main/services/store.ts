@@ -8,7 +8,7 @@ interface ModelConfig {
   displayName: string;
   apiKey: string;
   baseUrl: string;
-  capabilities: { text: boolean; image: boolean; file: boolean };
+  capabilities: { text: boolean; image: boolean; file: boolean; search: boolean };
 }
 
 interface SettingsSchema {
@@ -39,7 +39,16 @@ function decryptApiKey(encrypted: string): string {
 
 export function getModels(): ModelConfig[] {
   const models = store.get('models', []);
-  return models.map(m => ({ ...m, apiKey: decryptApiKey(m.apiKey) }));
+  return models.map(m => ({
+    ...m,
+    apiKey: decryptApiKey(m.apiKey),
+    capabilities: {
+      text: m.capabilities?.text ?? true,
+      image: m.capabilities?.image ?? false,
+      file: m.capabilities?.file ?? false,
+      search: m.capabilities?.search ?? false,
+    },
+  }));
 }
 
 export function saveModels(models: ModelConfig[]): void {
