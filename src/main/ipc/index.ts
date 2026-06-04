@@ -3,7 +3,7 @@ import { registerChatIpc } from './chat';
 import { registerSettingsIpc } from './settings';
 import { createChatWindow } from '../windows/chat';
 import { createSettingsWindow } from '../windows/settings';
-import { getPetWindow, hidePetWindow, closePetWindow } from '../windows/pet';
+import { getPetWindow, closePetWindow } from '../windows/pet';
 
 export function registerAllIpc(): void {
   registerChatIpc();
@@ -24,10 +24,6 @@ export function registerAllIpc(): void {
         click: () => createSettingsWindow(),
       },
       { type: 'separator' },
-      {
-        label: '😴 小睡一会',
-        click: () => hidePetWindow(),
-      },
       {
         label: '🚪 退出',
         click: () => {

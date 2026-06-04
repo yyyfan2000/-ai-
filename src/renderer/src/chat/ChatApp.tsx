@@ -1,10 +1,10 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { useModelStore } from '../stores/modelStore';
 import { useStreamChat } from './hooks/useStreamChat';
 import MessageList from './components/MessageList';
 import ModelSwitcher from './components/ModelSwitcher';
-import ChatInput from './components/ChatInput';
+import ChatInput, { UploadedFile } from './components/ChatInput';
 import type { ChatError } from '../types/chat';
 import './ChatApp.css';
 import 'highlight.js/styles/github-dark.css';
@@ -23,7 +23,7 @@ function getErrorActionLabel(error: ChatError): string | null {
   }
 }
 
-function handleErrorAction(error: ChatError, sendMessage: (content: string) => void): void {
+function handleErrorAction(error: ChatError, sendMessage: (content: string, files?: UploadedFile[], enableSearch?: boolean) => void): void {
   switch (error.code) {
     case 'no_model':
     case 'no_api_key':
@@ -32,11 +32,8 @@ function handleErrorAction(error: ChatError, sendMessage: (content: string) => v
       break;
     case 'service_unavailable':
     case 'timeout': {
-      // Retry with the last user message
       const messages = useChatStore.getState().messages;
-      const lastUserMsg = [...messages]
-        .reverse()
-        .find((m) => m.role === 'user');
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
       if (lastUserMsg) {
         useChatStore.getState().setError(null);
         sendMessage(lastUserMsg.content);
@@ -56,6 +53,11 @@ export default function ChatApp() {
 
   const setModels = useModelStore((s) => s.setModels);
   const setCurrentModelId = useModelStore((s) => s.setCurrentModelId);
+  const getCurrentModel = useModelStore((s) => s.getCurrentModel);
+
+  const [searchEnabled, setSearchEnabled] = useState(false);
+
+  const currentModel = getCurrentModel();
 
   const loadModels = useCallback(async () => {
     try {
@@ -70,28 +72,31 @@ export default function ChatApp() {
         }
       }
     } catch {
-      // Silently fail - user can configure models in settings
+      // Silently fail
     }
   }, [setModels, setCurrentModelId]);
 
-  // Load models on mount
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+  useEffect(() => { loadModels(); }, [loadModels]);
 
-  // Reload models when window regains focus (to pick up settings changes)
   useEffect(() => {
     const onFocus = () => loadModels();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [loadModels]);
 
+  const handleSend = useCallback(
+    (content: string, files?: UploadedFile[]) => {
+      sendMessage(content, files, searchEnabled);
+    },
+    [sendMessage, searchEnabled]
+  );
+
   const errorActionLabel = error ? getErrorActionLabel(error) : null;
 
   return (
     <div className="flex flex-col h-screen bg-white">
       {/* Title bar */}
-      <div className="titlebar flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-white flex-shrink-0">
+      <div className="titlebar flex items-center justify-between pl-[76px] pr-4 py-2 border-b border-gray-100 bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-lg">🦊</span>
           <span className="text-sm font-medium text-gray-800">小灵 · AI助手</span>
@@ -157,7 +162,14 @@ export default function ChatApp() {
       </div>
 
       {/* Input area */}
-      <ChatInput onSend={sendMessage} disabled={status !== 'idle'} />
+      <ChatInput
+        onSend={handleSend}
+        disabled={status !== 'idle'}
+        supportsImage={currentModel?.capabilities?.image ?? false}
+        supportsFile={currentModel?.capabilities?.file ?? false}
+        searchEnabled={searchEnabled}
+        onSearchToggle={setSearchEnabled}
+      />
     </div>
   );
 }

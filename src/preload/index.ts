@@ -18,8 +18,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 对话
   getModels: () => ipcRenderer.invoke('settings:get-models'),
   getDefaultModel: () => ipcRenderer.invoke('settings:get-default-model'),
-  sendChatMessage: (args: { modelId: string; messages: Array<{ role: string; content: string }> }) =>
+  sendChatMessage: (args: { modelId: string; messages: Array<{ role: string; content: any }>; enableSearch?: boolean }) =>
     ipcRenderer.send('chat:send-message', args),
+
+  // 联网搜索状态
+  onSearchStatus: (callback: (status: string) => void) => {
+    const handler = (_event: any, status: string) => callback(status);
+    ipcRenderer.on('chat:search-status', handler);
+    return () => ipcRenderer.removeListener('chat:search-status', handler);
+  },
 
   // 流式响应
   onStreamChunk: (callback: (text: string) => void) => {

@@ -96,7 +96,7 @@ export default function SettingsApp() {
   return (
     <div className="settings-window">
       {/* Title Bar */}
-      <header className="settings-titlebar flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 select-none">
+      <header className="settings-titlebar flex items-center justify-between pl-[76px] pr-5 py-3 border-b border-gray-200 bg-white flex-shrink-0 select-none">
         <h2 className="text-sm font-semibold text-gray-800">⚙️ 设置</h2>
         <button
           onClick={handleClose}

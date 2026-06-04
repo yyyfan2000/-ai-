@@ -18,8 +18,9 @@ interface ElectronAPI {
 
   getModels: () => Promise<ModelConfig[]>;
   getDefaultModel: () => Promise<string>;
-  sendChatMessage: (args: { modelId: string; messages: Array<{ role: string; content: string }> }) => void;
+  sendChatMessage: (args: { modelId: string; messages: Array<{ role: string; content: any }>; enableSearch?: boolean }) => void;
 
+  onSearchStatus: (callback: (status: string) => void) => () => void;
   onStreamChunk: (callback: (text: string) => void) => () => void;
   onStreamDone: (callback: () => void) => () => void;
   onStreamError: (callback: (err: { code: string; message: string }) => void) => () => void;

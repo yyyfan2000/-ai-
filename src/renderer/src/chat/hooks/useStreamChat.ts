@@ -2,6 +2,7 @@ import { useEffect, useCallback } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useModelStore } from '../../stores/modelStore';
 import type { ChatMessage } from '../../types/chat';
+import type { UploadedFile } from '../components/ChatInput';
 
 export function useStreamChat() {
   const addMessage = useChatStore((s) => s.addMessage);
@@ -38,7 +39,7 @@ export function useStreamChat() {
   }, [appendStreamChunk, finalizeStream, setError, setStatus]);
 
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, files?: UploadedFile[], enableSearch?: boolean) => {
       if (!content.trim()) return;
 
       // Validate model
@@ -55,11 +56,34 @@ export function useStreamChat() {
         return;
       }
 
+      // Build message content (supports multimodal)
+      let messageContent: any = content.trim();
+
+      if (files && files.length > 0) {
+        const parts: any[] = [{ type: 'text', text: content.trim() }];
+
+        files.forEach((f) => {
+          if (f.type === 'image') {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: f.dataUrl },
+            });
+          } else {
+            parts.push({
+              type: 'file',
+              file: { filename: f.name, data: f.dataUrl },
+            });
+          }
+        });
+
+        messageContent = parts;
+      }
+
       // Build user message
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'user',
-        content: content.trim(),
+        content: typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent),
         timestamp: Date.now(),
       };
 
@@ -71,14 +95,28 @@ export function useStreamChat() {
       setStatus('thinking');
       window.electronAPI?.setPetState('thinking');
 
-      // Build message list (user + assistant only, no system messages)
-      const allMessages = [...currentMessages, userMsg]
+      // Build message list for API (user + assistant)
+      const apiMessages: Array<{ role: string; content: any }> = [...currentMessages]
         .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({ role: m.role, content: m.content }));
+        .map((m) => {
+          // Try to parse content that might be JSON (multimodal)
+          try {
+            const parsed = JSON.parse(m.content);
+            if (Array.isArray(parsed)) return { role: m.role, content: parsed };
+          } catch { /* keep as string */ }
+          return { role: m.role, content: m.content };
+        });
+
+      // Add the new message (with proper multimodal format)
+      apiMessages.push({
+        role: 'user',
+        content: typeof messageContent === 'string' ? messageContent : messageContent,
+      });
 
       window.electronAPI?.sendChatMessage({
         modelId: model.id,
-        messages: allMessages,
+        messages: apiMessages,
+        enableSearch,
       });
     },
     [addMessage, getCurrentModel, setError, setStatus]
