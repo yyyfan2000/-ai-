@@ -1,14 +1,14 @@
 {
   "name": "xiaoling",
   "productName": "小灵",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "小灵 - Desktop Pet AI Assistant",
   "main": "./out/main/index.js",
   "author": "xiaoling",
   "license": "MIT",
   "build": {
     "appId": "com.xiaoling.desktop",
-    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "artifactName": "Xiaoling-${version}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "resources/icon.icns",
