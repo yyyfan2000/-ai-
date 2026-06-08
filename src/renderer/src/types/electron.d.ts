@@ -28,6 +28,11 @@ interface ElectronAPI {
 
   saveModels: (models: ModelConfig[]) => Promise<{ success: boolean }>;
   saveDefaultModel: (modelId: string) => Promise<{ success: boolean }>;
+  listProviderModels: (request: {
+    provider: string;
+    apiKey: string;
+    baseUrl: string;
+  }) => Promise<{ models: string[]; source: 'api' | 'fallback'; error?: string }>;
 }
 
 declare global {

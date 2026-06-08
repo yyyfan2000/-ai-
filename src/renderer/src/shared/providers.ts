@@ -22,8 +22,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '千问 (通义)',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen-plus',
-    models: ['qwen-plus', 'qwen-max', 'qwen-vl-plus', 'qwen-vl-max'],
-    defaultCapabilities: { text: true, image: true, file: false, search: false },
+    models: ['qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen-long', 'qwen-vl-plus', 'qwen-vl-max'],
+    defaultCapabilities: { text: true, image: true, file: false, search: true },
   },
   {
     key: 'zhipu',

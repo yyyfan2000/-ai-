@@ -5,6 +5,7 @@ export interface UploadedFile {
   dataUrl: string;
   type: 'image' | 'file';
   textContent?: string;
+  parseError?: string;
 }
 
 interface Props {
@@ -24,9 +25,182 @@ const ACCEPT_TEXT_TYPES = [
   'text/x-java', 'text/x-c', 'text/x-c++',
 ];
 
+const MAX_ATTACHMENT_TEXT = 60_000;
+
 function isTextFile(file: File): boolean {
   return ACCEPT_TEXT_TYPES.some(t => file.type.startsWith(t)) ||
     /\.(txt|md|json|xml|csv|yml|yaml|py|js|ts|jsx|tsx|java|c|cpp|h|hpp|rs|go|rb|php|sql|sh|bash|zsh|log|env|cfg|ini|toml)$/i.test(file.name);
+}
+
+function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+
+function isDocxFile(file: File): boolean {
+  return file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(file.name);
+}
+
+function truncateAttachmentText(text: string): string {
+  if (text.length <= MAX_ATTACHMENT_TEXT) return text;
+  return text.slice(0, MAX_ATTACHMENT_TEXT) + `\n\n[内容过长，已截断前 ${MAX_ATTACHMENT_TEXT} 字符]`;
+}
+
+function decodeXmlText(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('FileReader failed'));
+    reader.readAsText(file);
+  });
+}
+
+function readFileAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('FileReader failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(new Error('FileReader failed'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function inflateData(data: Uint8Array, format: string): Promise<Uint8Array> {
+  const StreamCtor = (globalThis as any).DecompressionStream;
+  if (!StreamCtor) throw new Error('当前环境不支持压缩文档解码');
+
+  const payload = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  const stream = new Blob([payload]).stream().pipeThrough(new StreamCtor(format));
+  const buffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let eocd = -1;
+
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 66000); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('无法读取 docx 目录');
+
+  const centralDirOffset = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  const targetEntries = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+  const xmlParts: string[] = [];
+  let offset = centralDirOffset;
+
+  while (offset + 46 <= bytes.length && view.getUint32(offset, true) === 0x02014b50) {
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileName = decoder.decode(bytes.slice(offset + 46, offset + 46 + fileNameLength));
+
+    if (targetEntries.includes(fileName) && view.getUint32(localHeaderOffset, true) === 0x04034b50) {
+      const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+      const fileBytes = method === 0 ? compressed : await inflateData(compressed, 'deflate-raw');
+      xmlParts.push(decoder.decode(fileBytes));
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  const xml = xmlParts.join('\n');
+  const paragraphs = xml.match(/<w:p[\s\S]*?<\/w:p>/g) || [xml];
+  const text = paragraphs
+    .map((paragraph) => paragraph
+      .replace(/<w:tab\/>/g, '\t')
+      .replace(/<w:br\/>/g, '\n')
+      .match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)
+      ?.map((part) => decodeXmlText(part.replace(/<[^>]+>/g, '')))
+      .join('') || '')
+    .filter(Boolean)
+    .join('\n');
+
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function decodePdfLiteral(value: string): string {
+  return value
+    .replace(/\\([\\()])/g, '$1')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\\d{1,3}/g, ' ')
+    .trim();
+}
+
+function extractPdfTextFromStream(text: string): string {
+  const results: string[] = [];
+  const literalRegex = /\((?:\\.|[^\\)])*\)\s*Tj/g;
+  const arrayRegex = /\[((?:\s*(?:\((?:\\.|[^\\)])*\)|-?\d+(?:\.\d+)?)\s*)+)\]\s*TJ/g;
+  let match;
+
+  while ((match = literalRegex.exec(text)) !== null) {
+    results.push(decodePdfLiteral(match[0].replace(/\)\s*Tj$/, '').slice(1)));
+  }
+
+  while ((match = arrayRegex.exec(text)) !== null) {
+    const parts = match[1].match(/\((?:\\.|[^\\)])*\)/g) || [];
+    const line = parts.map((part) => decodePdfLiteral(part.slice(1, -1))).join('');
+    if (line) results.push(line);
+  }
+
+  return results.join('\n');
+}
+
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  const bytes = new Uint8Array(buffer);
+  const decoder = new TextDecoder('latin1');
+  const raw = decoder.decode(bytes);
+  const results: string[] = [extractPdfTextFromStream(raw)];
+  const streamRegex = /stream\r?\n/g;
+  let match;
+
+  while ((match = streamRegex.exec(raw)) !== null && results.join('').length < MAX_ATTACHMENT_TEXT) {
+    const streamStart = match.index + match[0].length;
+    const streamEnd = raw.indexOf('endstream', streamStart);
+    if (streamEnd < 0) break;
+
+    const header = raw.slice(Math.max(0, match.index - 500), match.index);
+    const streamBytes = bytes.slice(streamStart, streamEnd);
+    try {
+      const decoded = header.includes('/FlateDecode')
+        ? await inflateData(streamBytes, 'deflate')
+        : streamBytes;
+      results.push(extractPdfTextFromStream(decoder.decode(decoded)));
+    } catch {
+      // Keep best-effort text from other streams.
+    }
+  }
+
+  return results.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** 压缩图片：限制长边 1024px，质量 0.7，最大输出约 5MB */
@@ -74,44 +248,68 @@ export default function ChatInput({
 
   const showUpload = supportsImage || supportsFile;
 
-  const processFile = useCallback((file: File) => {
+  const processFile = useCallback(async (file: File) => {
     const isImage = file.type.startsWith('image/');
     const isReadable = isTextFile(file);
 
     if (isImage && file.size > 5 * 1024 * 1024) {
       // 压缩大图
-      compressImage(file).then(blob => {
-        const r = new FileReader();
-        r.onload = () => setFiles(prev => [...prev, { name: file.name, dataUrl: r.result as string, type: 'image' }]);
-        r.readAsDataURL(blob);
-      }).catch(() => {
-        // 压缩失败，直接读 base64
-        const r = new FileReader();
-        r.onload = () => setFiles(prev => [...prev, { name: file.name, dataUrl: r.result as string, type: 'image' }]);
-        r.readAsDataURL(file);
-      });
+      try {
+        const blob = await compressImage(file);
+        const dataUrl = await readFileAsDataUrl(blob);
+        setFiles(prev => [...prev, { name: file.name, dataUrl, type: 'image' }]);
+      } catch {
+        const dataUrl = await readFileAsDataUrl(file);
+        setFiles(prev => [...prev, { name: file.name, dataUrl, type: 'image' }]);
+      }
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const f: UploadedFile = { name: file.name, dataUrl, type: isImage ? 'image' : 'file' };
-      if (isReadable && !isImage) {
-        f.textContent = dataUrl.includes('base64,')
-          ? atob(dataUrl.split('base64,')[1])
-          : dataUrl;
+    if (isImage) {
+      const dataUrl = await readFileAsDataUrl(file);
+      setFiles(prev => [...prev, { name: file.name, dataUrl, type: 'image' }]);
+      return;
+    }
+
+    try {
+      let textContent = '';
+      if (isReadable) {
+        textContent = await readFileAsText(file);
+      } else if (isPdfFile(file)) {
+        textContent = await extractPdfText(await readFileAsArrayBuffer(file));
+      } else if (isDocxFile(file)) {
+        textContent = await extractDocxText(await readFileAsArrayBuffer(file));
       }
-      setFiles(prev => [...prev, f]);
-    };
-    if (isReadable && !isImage) reader.readAsText(file);
-    else reader.readAsDataURL(file);
+
+      if (textContent.trim()) {
+        setFiles(prev => [...prev, {
+          name: file.name,
+          dataUrl: '',
+          type: 'file',
+          textContent: truncateAttachmentText(textContent.trim()),
+        }]);
+        return;
+      }
+
+      setFiles(prev => [...prev, {
+        name: file.name,
+        dataUrl: '',
+        type: 'file',
+        parseError: '未能从该文档提取文本',
+      }]);
+    } catch {
+      setFiles(prev => [...prev, {
+        name: file.name,
+        dataUrl: '',
+        type: 'file',
+        parseError: '文档解析失败',
+      }]);
+    }
   }, []);
 
   const handleSend = useCallback(() => {
-    const content = input.trim();
-    if (!content && files.length === 0) return;
-    if (!content) return;
+    const content = input.trim() || '请分析这些附件。';
+    if (!input.trim() && files.length === 0) return;
     onSend(content, files.length > 0 ? files : undefined);
     setInput('');
     setFiles([]);
@@ -163,7 +361,7 @@ export default function ChatInput({
 
   const acceptTypes = [
     supportsImage ? 'image/*' : '',
-    supportsFile ? '.pdf,.doc,.docx,.txt,.csv,.json,.xml,.md,.yml,.yaml,.py,.js,.ts,.go,.rs,.rb,.java,.c,.cpp,.h,.hpp,.sql,.sh,.bash,.zsh,.log,.env,.ini,.toml' : '',
+    supportsFile ? '.pdf,.docx,.txt,.csv,.json,.xml,.md,.yml,.yaml,.py,.js,.ts,.go,.rs,.rb,.java,.c,.cpp,.h,.hpp,.sql,.sh,.bash,.zsh,.log,.env,.ini,.toml' : '',
   ].filter(Boolean).join(',');
 
   return (
@@ -184,6 +382,7 @@ export default function ChatInput({
                 <span className="text-sm flex-shrink-0">{f.textContent ? '📝' : '📄'}</span>
               )}
               <span className="truncate">{f.name}</span>
+              {f.parseError && <span className="text-red-400 flex-shrink-0" title={f.parseError}>!</span>}
               <button onClick={() => removeFile(i)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">✕</button>
             </div>
           ))}
@@ -250,7 +449,7 @@ export default function ChatInput({
           <span className="text-[10px] text-gray-400 hidden sm:block">Enter 发送 · Shift+Enter 换行</span>
           <button
             onClick={handleSend}
-            disabled={disabled || !input.trim()}
+            disabled={disabled || (!input.trim() && files.length === 0)}
             className="flex-shrink-0 w-9 h-9 rounded-lg bg-fox-orange text-white flex items-center justify-center hover:bg-fox-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="发送"
           >

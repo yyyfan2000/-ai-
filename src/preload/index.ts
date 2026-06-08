@@ -49,4 +49,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 设置
   saveModels: (models: any[]) => ipcRenderer.invoke('settings:save-models', models),
   saveDefaultModel: (modelId: string) => ipcRenderer.invoke('settings:save-default-model', modelId),
+  listProviderModels: (request: { provider: string; apiKey: string; baseUrl: string }) =>
+    ipcRenderer.invoke('settings:list-provider-models', request),
 });

@@ -37,22 +37,43 @@ function decryptApiKey(encrypted: string): string {
   return Buffer.from(encrypted, 'base64').toString('utf-8');
 }
 
+function inferCapabilities(model: ModelConfig): ModelConfig['capabilities'] {
+  const lower = model.modelId.toLowerCase();
+  const supportsImage =
+    lower.includes('omni') ||
+    lower.includes('vision') ||
+    lower.includes('image') ||
+    lower.includes('-vl') ||
+    lower.includes('4v') ||
+    lower.includes('gpt-4o') ||
+    lower.includes('gpt-4.1') ||
+    (model.provider === 'doubao' && lower.includes('vision')) ||
+    (model.provider === 'qwen' && lower.includes('-vl')) ||
+    (model.provider === 'zhipu' && lower.includes('4v'));
+
+  return {
+    text: true,
+    image: supportsImage,
+    file: true,
+    search: true,
+  };
+}
+
 export function getModels(): ModelConfig[] {
   const models = store.get('models', []);
   return models.map(m => ({
     ...m,
     apiKey: decryptApiKey(m.apiKey),
-    capabilities: {
-      text: m.capabilities?.text ?? true,
-      image: m.capabilities?.image ?? false,
-      file: m.capabilities?.file ?? false,
-      search: m.capabilities?.search ?? false,
-    },
+    capabilities: inferCapabilities(m),
   }));
 }
 
 export function saveModels(models: ModelConfig[]): void {
-  const encrypted = models.map(m => ({ ...m, apiKey: encryptApiKey(m.apiKey) }));
+  const encrypted = models.map(m => ({
+    ...m,
+    capabilities: inferCapabilities(m),
+    apiKey: encryptApiKey(m.apiKey),
+  }));
   store.set('models', encrypted);
 }
 

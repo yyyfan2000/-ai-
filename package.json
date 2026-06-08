@@ -1,13 +1,26 @@
 {
   "name": "xiaoling",
+  "productName": "小灵",
   "version": "1.0.0",
   "description": "小灵 - Desktop Pet AI Assistant",
   "main": "./out/main/index.js",
   "author": "xiaoling",
   "license": "MIT",
+  "build": {
+    "appId": "com.xiaoling.desktop",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "resources/icon.icns",
+      "target": [
+        "dmg"
+      ]
+    }
+  },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/prepare-dev-electron.cjs && electron-vite dev",
     "build": "electron-vite build",
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish never",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",

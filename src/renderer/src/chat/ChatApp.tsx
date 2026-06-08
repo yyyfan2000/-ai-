@@ -53,11 +53,11 @@ export default function ChatApp() {
 
   const setModels = useModelStore((s) => s.setModels);
   const setCurrentModelId = useModelStore((s) => s.setCurrentModelId);
-  const getCurrentModel = useModelStore((s) => s.getCurrentModel);
+  const currentModel = useModelStore((s) =>
+    s.models.find((m) => m.id === s.currentModelId) || s.models[0]
+  );
 
   const [searchEnabled, setSearchEnabled] = useState(false);
-
-  const currentModel = getCurrentModel();
 
   const loadModels = useCallback(async () => {
     try {
@@ -164,10 +164,10 @@ export default function ChatApp() {
       {/* Input area */}
       <ChatInput
         onSend={handleSend}
-        disabled={status !== 'idle'}
-        supportsImage={currentModel?.capabilities?.image ?? false}
-        supportsFile={currentModel?.capabilities?.file ?? false}
-        supportsSearch={currentModel?.capabilities?.search ?? false}
+        disabled={status === 'thinking' || status === 'streaming'}
+        supportsImage={Boolean(currentModel)}
+        supportsFile={Boolean(currentModel)}
+        supportsSearch={Boolean(currentModel)}
         searchEnabled={searchEnabled}
         onSearchToggle={setSearchEnabled}
       />

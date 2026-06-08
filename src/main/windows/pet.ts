@@ -6,21 +6,26 @@ let petWindow: BrowserWindow | null = null;
 export function createPetWindow(): BrowserWindow {
   if (petWindow && !petWindow.isDestroyed()) {
     petWindow.focus();
+    petWindow.showInactive();
+    petWindow.moveTop();
     return petWindow;
   }
 
-  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+  const { workArea } = screen.getPrimaryDisplay();
+  const width = 100;
+  const height = 120;
 
   petWindow = new BrowserWindow({
-    width: 100,
-    height: 120,
-    x: screenWidth - 150,
-    y: 300,
+    width,
+    height,
+    x: workArea.x + workArea.width - width - 30,
+    y: workArea.y + 260,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     hasShadow: false,
     resizable: false,
+    show: true,
     skipTaskbar: true,
     type: 'panel',
     webPreferences: {
@@ -29,7 +34,8 @@ export function createPetWindow(): BrowserWindow {
     },
   });
 
-  petWindow.setVisibleOnAllWorkspaces(true);
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   if (process.env.NODE_ENV === 'development') {
     petWindow.loadURL('http://localhost:5173?window=pet');
@@ -40,6 +46,14 @@ export function createPetWindow(): BrowserWindow {
   }
 
   petWindow.on('closed', () => { petWindow = null; });
+  petWindow.webContents.on('did-fail-load', (_event, _errorCode, errorDescription) => {
+    console.error(`pet did-fail-load: ${errorDescription}`);
+  });
+  petWindow.once('ready-to-show', () => {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    petWindow.showInactive();
+    petWindow.moveTop();
+  });
 
   return petWindow;
 }
@@ -54,7 +68,8 @@ export function hidePetWindow(): void {
 
 export function showPetWindow(): void {
   if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.show();
+    petWindow.showInactive();
+    petWindow.moveTop();
   } else {
     createPetWindow();
   }

@@ -19,6 +19,6 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   getCurrentModel: () => {
     const { models, currentModelId } = get();
-    return models.find((m) => m.id === currentModelId);
+    return models.find((m) => m.id === currentModelId) || models[0];
   },
 }));

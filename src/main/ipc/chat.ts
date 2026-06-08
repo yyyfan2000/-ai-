@@ -47,9 +47,7 @@ export function registerChatIpc(): void {
         if (query) {
           senderWindow?.webContents.send('chat:search-status', 'searching');
           searchResults = await searchWeb(query.slice(0, 200));
-          if (searchResults) {
-            senderWindow?.webContents.send('chat:search-status', 'done');
-          }
+          senderWindow?.webContents.send('chat:search-status', searchResults ? 'done' : 'empty');
         }
       }
     }

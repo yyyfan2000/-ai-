@@ -38,12 +38,20 @@ export default function SettingsApp() {
 
   // Add a new model from the form
   const handleAddModel = useCallback(
-    (model: ModelConfig) => {
+    (model: ModelConfig | ModelConfig[]) => {
+      const incomingModels = Array.isArray(model) ? model : [model];
       setModels((prev) => {
-        const updated = [...prev, model];
+        const existingKeys = new Set(prev.map((m) => `${m.provider}|${m.baseUrl}|${m.modelId}`));
+        const freshModels = incomingModels.filter((m) => {
+          const key = `${m.provider}|${m.baseUrl}|${m.modelId}`;
+          if (existingKeys.has(key)) return false;
+          existingKeys.add(key);
+          return true;
+        });
+        const updated = [...prev, ...freshModels];
         // If this is the first model, auto-select it as default
-        if (updated.length === 1) {
-          setDefaultModelId(model.id);
+        if (prev.length === 0 && updated.length > 0) {
+          setDefaultModelId(updated[0].id);
         }
         return updated;
       });

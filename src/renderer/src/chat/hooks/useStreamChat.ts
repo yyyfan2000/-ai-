@@ -55,6 +55,13 @@ export function useStreamChat() {
         });
         return;
       }
+      if (files?.some(f => f.type === 'image') && !model.capabilities.image) {
+        setError({
+          code: 'unsupported_image',
+          message: `当前模型 ${model.displayName || model.modelId} 不支持图片分析，请切换到视觉模型后重试`,
+        });
+        return;
+      }
 
       // Build message content (supports multimodal)
       let messageContent: any = content.trim();
@@ -72,10 +79,11 @@ export function useStreamChat() {
           });
         }
 
-        // 非文本文件的提示
-        const binaryFiles = files.filter(f => !f.textContent && f.type === 'file');
-        if (binaryFiles.length > 0) {
-          textBody += '\n\n[用户上传了以下文件: ' + binaryFiles.map(f => f.name).join(', ') + ']';
+        const unreadableFiles = files.filter(f => !f.textContent && f.type === 'file');
+        if (unreadableFiles.length > 0) {
+          textBody += '\n\n[以下附件未能提取文本，无法直接分析内容: ' +
+            unreadableFiles.map(f => `${f.name}${f.parseError ? `（${f.parseError}）` : ''}`).join(', ') +
+            ']';
         }
 
         parts.push({ type: 'text', text: textBody });
@@ -83,11 +91,6 @@ export function useStreamChat() {
         // 添加图片
         files.filter(f => f.type === 'image').forEach(f => {
           parts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
-        });
-
-        // 添加二进制文件为 file 类型
-        binaryFiles.forEach(f => {
-          parts.push({ type: 'file', file: { filename: f.name, data: f.dataUrl } });
         });
 
         messageContent = parts;

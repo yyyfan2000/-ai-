@@ -3,6 +3,27 @@
  * 优先使用 DuckDuckGo，失败时返回空（静默降级）
  */
 
+function decodeHtml(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function stripHtml(html: string): string {
+  return decodeHtml(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+}
+
+function formatResults(query: string, results: string[]): string {
+  return `以下是与"${query}"相关的网络搜索结果：\n\n${results.join('\n')}`;
+}
+
 export async function searchWeb(query: string): Promise<string> {
   try {
     // 方案1: DuckDuckGo HTML 搜索（更可靠）
@@ -20,20 +41,23 @@ export async function searchWeb(query: string): Promise<string> {
       const html = await htmlRes.text();
 
       // 提取搜索结果
-      const resultRegex = /<a[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*?>([\s\S]*?)<\/a>/gi;
+      const resultRegex = /<div[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*result[^"]*"|<\/body>)/gi;
       const results: string[] = [];
       let match;
 
       while ((match = resultRegex.exec(html)) !== null && results.length < 5) {
-        const title = match[1]?.replace(/<[^>]+>/g, '').trim() || '';
-        const snippet = match[2]?.replace(/<[^>]+>/g, '').trim() || '';
+        const block = match[1] || '';
+        const titleMatch = block.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+        const snippetMatch = block.match(/<(?:a|span)[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|span)>/i);
+        const title = titleMatch ? stripHtml(titleMatch[1]) : '';
+        const snippet = snippetMatch ? stripHtml(snippetMatch[1]) : '';
         if (title || snippet) {
           results.push(`- [${title}] ${snippet.slice(0, 200)}`);
         }
       }
 
       if (results.length > 0) {
-        return `以下是与"${query}"相关的网络搜索结果：\n\n${results.join('\n')}`;
+        return formatResults(query, results);
       }
     }
   } catch {
@@ -54,20 +78,20 @@ export async function searchWeb(query: string): Promise<string> {
     if (liteRes.ok) {
       const html = await liteRes.text();
       // Lite 版本结果格式
-      const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<span[^>]*class="link-text"[^>]*>([\s\S]*?)<\/span>/gi;
+      const linkRegex = /<a[^>]*rel="nofollow"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<a[^>]*rel="nofollow"|<\/body>)/gi;
       const results: string[] = [];
       let match;
 
       while ((match = linkRegex.exec(html)) !== null && results.length < 5) {
-        const title = match[2]?.replace(/<[^>]+>/g, '').trim() || '';
-        const snippet = match[3]?.replace(/<[^>]+>/g, '').trim() || '';
+        const title = stripHtml(match[1] || '');
+        const snippet = stripHtml((match[2] || '').replace(/<a[\s\S]*$/i, ''));
         if (title) {
           results.push(`- ${title}${snippet ? ': ' + snippet.slice(0, 150) : ''}`);
         }
       }
 
       if (results.length > 0) {
-        return `以下是与"${query}"相关的网络搜索结果：\n\n${results.join('\n')}`;
+        return formatResults(query, results);
       }
     }
   } catch {

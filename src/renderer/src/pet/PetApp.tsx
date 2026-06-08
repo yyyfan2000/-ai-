@@ -7,8 +7,8 @@ const DRAG_THRESHOLD = 3;
 
 export default function PetApp() {
   const [petState, setPetState] = useState<PetState>('idle');
-  const [showSpeechBubble, setShowSpeechBubble] = useState(false);
-  const [speechText, setSpeechText] = useState('');
+  const [showSpeechBubble, setShowSpeechBubble] = useState(true);
+  const [speechText, setSpeechText] = useState('我在这里');
 
   const petStateRef = useRef<PetState>('idle');
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

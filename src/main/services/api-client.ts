@@ -32,20 +32,135 @@ export interface ChatRequestOptions {
   searchResults?: string;
 }
 
+export interface ListProviderModelsRequest {
+  provider: string;
+  apiKey: string;
+  baseUrl: string;
+}
+
+export interface ListProviderModelsResult {
+  models: string[];
+  source: 'api' | 'fallback';
+  error?: string;
+}
+
+const FALLBACK_MODELS: Record<string, string[]> = {
+  qwen: [
+    'qwen-plus',
+    'qwen-max',
+    'qwen-turbo',
+    'qwen-long',
+    'qwen-vl-plus',
+    'qwen-vl-max',
+  ],
+};
+
 /**
- * 获取厂商特定的联网搜索 extra_body
+ * 获取 OpenAI 兼容的 chat/completions 地址。
+ * 部分厂商的 baseUrl 已经包含版本路径，不能再追加 /v1。
  */
-function getSearchExtraBody(provider: string): Record<string, unknown> | null {
-  switch (provider) {
-    case 'deepseek':
-      return { enable_search: true };
-    case 'kimi':
-      return { use_search: true };
-    case 'zhipu':
-      return { tools: [{ type: 'web_search' }] };
-    default:
-      return null;
+function buildChatUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  if (/\/(v1|v3|v4)$/i.test(normalized)) {
+    return `${normalized}/chat/completions`;
   }
+  return `${normalized}/v1/chat/completions`;
+}
+
+function buildModelsUrl(baseUrl: string): string {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  return `${normalized}/models`;
+}
+
+function getFallbackModels(provider: string): string[] {
+  return FALLBACK_MODELS[provider] || [];
+}
+
+export async function listProviderModels(
+  request: ListProviderModelsRequest
+): Promise<ListProviderModelsResult> {
+  const fallback = getFallbackModels(request.provider);
+
+  try {
+    const response = await fetch(buildModelsUrl(request.baseUrl), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${request.apiKey}`,
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`模型列表接口返回 ${response.status}`);
+    }
+
+    const body = await response.json() as {
+      data?: Array<{ id?: string }>;
+      models?: Array<string | { id?: string; name?: string }>;
+    };
+    const rawModels = body.data
+      ? body.data.map((item) => item.id || '')
+      : (body.models || []).map((item) => typeof item === 'string' ? item : item.id || item.name || '');
+    const models = rawModels
+      .filter((id): id is string => Boolean(id))
+      .filter((id) => request.provider !== 'qwen' || id.startsWith('qwen'))
+      .sort((a, b) => a.localeCompare(b));
+
+    if (models.length > 0) {
+      return { models, source: 'api' };
+    }
+
+    if (fallback.length > 0) {
+      return { models: fallback, source: 'fallback', error: '模型列表接口没有返回可用模型' };
+    }
+    return { models: [], source: 'api' };
+  } catch (err: any) {
+    if (fallback.length > 0) {
+      return { models: fallback, source: 'fallback', error: err.message };
+    }
+    return { models: [], source: 'fallback', error: err.message };
+  }
+}
+
+/**
+ * 少数厂商支持在 Chat Completions 顶层传联网工具。
+ * 本应用始终会先做本地搜索并注入上下文，这里只做兼容增强。
+ */
+function getSearchRequestPatch(provider: string): Record<string, unknown> | null {
+  if (provider === 'qwen') {
+    return {
+      enable_search: true,
+      search_options: {
+        forced_search: true,
+        search_strategy: 'turbo',
+      },
+    };
+  }
+  if (provider === 'zhipu') {
+    return { tools: [{ type: 'web_search', web_search: { enable: true } }] };
+  }
+  return null;
+}
+
+function messageHasImage(messages: ChatMessage[]): boolean {
+  return messages.some((message) => Array.isArray(message.content) &&
+    message.content.some((part) => part.type === 'image_url'));
+}
+
+function isQwenImageGenerationModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  return lower.startsWith('qwen-image') || lower.includes('image-edit');
+}
+
+function getChatModelId(model: ModelConfig, messages: ChatMessage[]): string {
+  const lower = model.modelId.toLowerCase();
+  if (model.provider === 'qwen' && isQwenImageGenerationModel(model.modelId)) {
+    return messageHasImage(messages) ? 'qwen-vl-plus' : 'qwen-plus';
+  }
+  if (model.provider === 'qwen' && lower.includes('-realtime')) {
+    return model.modelId.replace(/-realtime(?=-\d{4}-\d{2}-\d{2}$|$)/, '');
+  }
+  return model.modelId;
 }
 
 /**
@@ -57,8 +172,8 @@ export async function streamChat(
   callbacks: StreamCallbacks,
   options: ChatRequestOptions = {}
 ): Promise<void> {
-  const { baseUrl, apiKey, modelId, provider, capabilities } = model;
-  const url = `${baseUrl}/v1/chat/completions`;
+  const { baseUrl, apiKey, provider, capabilities } = model;
+  const url = buildChatUrl(baseUrl);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 180_000);
@@ -74,23 +189,20 @@ export async function streamChat(
     finalMessages = [searchCtx, ...finalMessages];
   }
 
+  const requestModelId = getChatModelId(model, finalMessages);
+
   // 构建请求体
   const requestBody: Record<string, unknown> = {
-    model: modelId,
+    model: requestModelId,
     messages: finalMessages,
     stream: true,
   };
 
-  // 厂商特定的搜索参数（通过 extra_body 透传）
-  if (options.enableSearch && capabilities.search) {
-    const searchExtra = getSearchExtraBody(provider);
-    if (searchExtra) {
-      // DeepSeek 使用 extra_body，其他厂商可能需要不同方式
-      // 对于 OpenAI 兼容 API，通过顶层 tools 或 extra_body 注入
-      (requestBody as any).extra_body = {
-        ...((requestBody as any).extra_body || {}),
-        ...searchExtra,
-      };
+  // 厂商特定的原生搜索参数
+  if (options.enableSearch) {
+    const searchPatch = getSearchRequestPatch(provider);
+    if (searchPatch) {
+      Object.assign(requestBody, searchPatch);
     }
   }
 
@@ -142,6 +254,7 @@ export async function streamChat(
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let receivedContent = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -157,19 +270,31 @@ export async function streamChat(
 
         const data = trimmed.slice(6);
         if (data === '[DONE]') {
-          callbacks.onDone();
+          if (receivedContent) {
+            callbacks.onDone();
+          } else {
+            callbacks.onError('empty_response', '当前模型没有返回可显示的文本，请切换到文本/视觉聊天模型后重试');
+          }
           return;
         }
 
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) callbacks.onChunk(content);
+          const delta = parsed.choices?.[0]?.delta;
+          const content = delta?.content || delta?.text || parsed.output?.text;
+          if (content) {
+            receivedContent = true;
+            callbacks.onChunk(content);
+          }
         } catch { /* skip */ }
       }
     }
 
-    callbacks.onDone();
+    if (receivedContent) {
+      callbacks.onDone();
+    } else {
+      callbacks.onError('empty_response', '当前模型没有返回可显示的文本，请切换到文本/视觉聊天模型后重试');
+    }
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {

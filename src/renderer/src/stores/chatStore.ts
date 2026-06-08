@@ -31,6 +31,13 @@ export const useChatStore = create<ChatState>((set) => ({
 
   finalizeStream: () =>
     set((s) => {
+      if (!s.streamingContent.trim()) {
+        return {
+          streamingContent: '',
+          status: 'error',
+          error: { code: 'empty_response', message: '当前模型没有返回可显示的文本，请切换模型后重试' },
+        };
+      }
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',

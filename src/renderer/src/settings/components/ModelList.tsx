@@ -1,18 +1,10 @@
 import React from 'react';
 import { ModelConfig } from '../../types/model';
+import { getModelCapabilityLabels } from '../../shared/modelCapabilities';
 
 interface Props {
   models: ModelConfig[];
   onDelete: (id: string) => void;
-}
-
-function CapabilityIcons({ model }: { model: ModelConfig }) {
-  const icons: string[] = [];
-  if (model.capabilities.text) icons.push('📝');
-  if (model.capabilities.image) icons.push('🖼️');
-  if (model.capabilities.file) icons.push('📎');
-  if (model.capabilities.search) icons.push('🌐');
-  return <span className="text-xs">{icons.join(' ')}</span>;
 }
 
 export default function ModelList({ models, onDelete }: Props) {
@@ -33,7 +25,13 @@ export default function ModelList({ models, onDelete }: Props) {
         >
           <span className="text-green-500 flex-shrink-0">✓</span>
           <span className="flex-1 text-sm text-gray-700 truncate">{m.displayName}</span>
-          <CapabilityIcons model={m} />
+          <span className="flex items-center gap-1 flex-shrink-0">
+            {getModelCapabilityLabels(m).slice(0, 3).map((label) => (
+              <span key={label.text} className={`rounded px-1.5 py-0.5 text-[10px] leading-4 ${label.className}`}>
+                {label.text}
+              </span>
+            ))}
+          </span>
           <button
             onClick={() => onDelete(m.id)}
             className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors text-sm ml-1"

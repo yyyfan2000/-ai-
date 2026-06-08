@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { PROVIDER_PRESETS } from '../../shared/providers';
-import { ModelConfig, ModelCapabilities } from '../../types/model';
+import { ModelConfig } from '../../types/model';
 import ProviderSelect from './ProviderSelect';
 
 interface Props {
-  onSave: (model: ModelConfig) => void;
+  onSave: (model: ModelConfig | ModelConfig[]) => void;
   onCancel: () => void;
 }
 
@@ -12,7 +12,27 @@ function generateId(): string {
   return 'model_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
 }
 
-const defaultCaps: ModelCapabilities = { text: true, image: false, file: false, search: false };
+function inferCapabilities(provider: string, modelId: string): ModelConfig['capabilities'] {
+  const lower = modelId.toLowerCase();
+  const supportsImage =
+    lower.includes('omni') ||
+    lower.includes('vision') ||
+    lower.includes('image') ||
+    lower.includes('-vl') ||
+    lower.includes('4v') ||
+    lower.includes('gpt-4o') ||
+    lower.includes('gpt-4.1') ||
+    (provider === 'doubao' && lower.includes('vision')) ||
+    (provider === 'qwen' && lower.includes('-vl')) ||
+    (provider === 'zhipu' && lower.includes('4v'));
+
+  return {
+    text: true,
+    image: supportsImage,
+    file: true,
+    search: true,
+  };
+}
 
 export default function ModelForm({ onSave, onCancel }: Props) {
   const [provider, setProvider] = useState('');
@@ -20,14 +40,20 @@ export default function ModelForm({ onSave, onCancel }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [capabilities, setCapabilities] = useState<ModelCapabilities>({ ...defaultCaps });
   const [showApiKey, setShowApiKey] = useState(false);
+  const [syncedModels, setSyncedModels] = useState<string[]>([]);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'success' | 'fallback' | 'error'>('idle');
+  const [syncMessage, setSyncMessage] = useState('');
 
   const preset = PROVIDER_PRESETS.find((p) => p.key === provider);
   const isCustom = provider === 'custom';
+  const modelOptions = syncedModels.length > 0 ? syncedModels : preset?.models || [];
 
   const handleProviderChange = useCallback((key: string) => {
     setProvider(key);
+    setSyncedModels([]);
+    setSyncStatus('idle');
+    setSyncMessage('');
     const selected = PROVIDER_PRESETS.find((p) => p.key === key);
     if (!selected) return;
 
@@ -35,12 +61,10 @@ export default function ModelForm({ onSave, onCancel }: Props) {
       setModel('');
       setDisplayName('');
       setBaseUrl('');
-      setCapabilities({ ...defaultCaps });
     } else {
       setModel(selected.defaultModel);
       setDisplayName(`${selected.name}-${selected.defaultModel}`);
       setBaseUrl(selected.baseUrl);
-      setCapabilities({ ...selected.defaultCapabilities });
     }
   }, []);
 
@@ -51,31 +75,67 @@ export default function ModelForm({ onSave, onCancel }: Props) {
         setDisplayName(`${preset.name}-${value}`);
       }
     },
-    [preset, isCustom]
+    [preset, isCustom, provider]
   );
 
-  const handleCapToggle = useCallback((key: keyof ModelCapabilities) => {
-    if (key === 'text') return; // text is always enabled
-    setCapabilities((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+  const buildModelConfig = useCallback((modelId: string): ModelConfig => {
+    return {
+      id: generateId(),
+      provider,
+      modelId,
+      displayName: preset && !isCustom ? `${preset.name}-${modelId}` : displayName.trim(),
+      apiKey: apiKey.trim(),
+      baseUrl: baseUrl.trim(),
+      capabilities: inferCapabilities(provider, modelId),
+    };
+  }, [apiKey, baseUrl, displayName, isCustom, preset, provider]);
+
+  const handleSyncModels = useCallback(async () => {
+    if (!provider || !apiKey.trim() || !baseUrl.trim()) return;
+
+    setSyncStatus('loading');
+    setSyncMessage('');
+    try {
+      const result = await window.electronAPI?.listProviderModels({
+        provider,
+        apiKey: apiKey.trim(),
+        baseUrl: baseUrl.trim(),
+      });
+      const models = result?.models || [];
+      setSyncedModels(models);
+      if (models.length > 0) {
+        const nextModel = models.includes(model) ? model : models[0];
+        handleModelChange(nextModel);
+        setSyncStatus(result?.source === 'api' ? 'success' : 'fallback');
+        setSyncMessage(result?.source === 'api'
+          ? `已同步 ${models.length} 个模型`
+          : `接口不可用，已使用内置列表 ${models.length} 个模型`);
+      } else {
+        setSyncStatus('error');
+        setSyncMessage(result?.error || '没有获取到可用模型');
+      }
+    } catch (err: any) {
+      setSyncedModels([]);
+      setSyncStatus('error');
+      setSyncMessage(err.message || '同步失败');
+    }
+  }, [apiKey, baseUrl, handleModelChange, model, provider]);
 
   const handleSubmit = useCallback(() => {
     if (!provider || !model.trim() || !displayName.trim() || !apiKey.trim() || !baseUrl.trim()) {
       return;
     }
-    onSave({
-      id: generateId(),
-      provider,
-      modelId: model.trim(),
-      displayName: displayName.trim(),
-      apiKey: apiKey.trim(),
-      baseUrl: baseUrl.trim(),
-      capabilities,
-    });
-  }, [provider, model, displayName, apiKey, baseUrl, capabilities, onSave]);
+    onSave(buildModelConfig(model.trim()));
+  }, [provider, model, displayName, apiKey, baseUrl, buildModelConfig, onSave]);
+
+  const handleAddSyncedModels = useCallback(() => {
+    if (!provider || syncedModels.length === 0 || !apiKey.trim() || !baseUrl.trim()) return;
+    onSave(syncedModels.map(buildModelConfig));
+  }, [apiKey, baseUrl, buildModelConfig, onSave, provider, syncedModels]);
 
   const isFormValid =
     provider && model.trim() && displayName.trim() && apiKey.trim() && baseUrl.trim();
+  const canSync = Boolean(provider && !isCustom && apiKey.trim() && baseUrl.trim() && syncStatus !== 'loading');
 
   const inputClass =
     'w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-fox-orange focus:ring-1 focus:ring-fox-orange';
@@ -104,11 +164,11 @@ export default function ModelForm({ onSave, onCancel }: Props) {
           <select
             value={model}
             onChange={(e) => handleModelChange(e.target.value)}
-            disabled={!preset || preset.models.length === 0}
+            disabled={!preset || modelOptions.length === 0}
             className={inputClass + ' disabled:opacity-50 disabled:cursor-not-allowed'}
           >
             <option value="">选择模型</option>
-            {preset?.models.map((m) => (
+            {modelOptions.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
@@ -163,48 +223,26 @@ export default function ModelForm({ onSave, onCancel }: Props) {
         />
       </div>
 
-      {/* Capabilities */}
-      <div>
-        <label className={labelClass}>能力</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={capabilities.text}
-              disabled
-              className="accent-fox-orange"
-            />
-            <span>📝 文本</span>
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={capabilities.image}
-              onChange={() => handleCapToggle('image')}
-              className="accent-fox-orange"
-            />
-            <span>🖼️ 图片</span>
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={capabilities.file}
-              onChange={() => handleCapToggle('file')}
-              className="accent-fox-orange"
-            />
-            <span>📎 文件</span>
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={capabilities.search}
-              onChange={() => handleCapToggle('search')}
-              className="accent-fox-orange"
-            />
-            <span>🌐 联网搜索</span>
-          </label>
+      {!isCustom && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSyncModels}
+            disabled={!canSync}
+            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:text-fox-orange hover:border-fox-orange transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {syncStatus === 'loading' ? '同步中...' : '同步模型'}
+          </button>
+          {syncMessage && (
+            <span className={`text-xs ${
+              syncStatus === 'error' ? 'text-red-500' :
+                syncStatus === 'fallback' ? 'text-amber-600' : 'text-green-600'
+            }`}>
+              {syncMessage}
+            </span>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end gap-2 pt-1">
@@ -215,6 +253,15 @@ export default function ModelForm({ onSave, onCancel }: Props) {
         >
           取消
         </button>
+        {syncedModels.length > 1 && (
+          <button
+            type="button"
+            onClick={handleAddSyncedModels}
+            className="px-4 py-1.5 text-sm rounded-lg border border-fox-orange text-fox-orange hover:bg-orange-50 transition-colors"
+          >
+            添加全部
+          </button>
+        )}
         <button
           type="button"
           onClick={handleSubmit}

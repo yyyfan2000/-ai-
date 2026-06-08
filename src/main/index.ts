@@ -1,11 +1,23 @@
 import { app } from 'electron';
 import { createPetWindow } from './windows/pet';
-import { createTray } from './tray';
 import { registerAllIpc } from './ipc';
+import { createFoxDockIcon } from './services/app-icon';
+
+app.setName('小灵');
 
 app.whenReady().then(() => {
+  const foxIcon = createFoxDockIcon();
+
+  app.setAboutPanelOptions({
+    applicationName: '小灵',
+  });
+
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(foxIcon);
+    app.dock?.show();
+  }
+
   registerAllIpc();
-  createTray();
   createPetWindow();
 
   app.on('activate', () => {
@@ -14,7 +26,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // macOS 不退出，托盘保持
+  // macOS 不退出，保留 Dock 入口
 });
 
 app.on('before-quit', () => {
